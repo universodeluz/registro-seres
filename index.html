@@ -113,7 +113,7 @@ function siguienteCodigo(){
 
 function lista(){
   $('#app').innerHTML = `<header><h2>Seres de Luz</h2><div class="row" style="margin:0">${rol==='administrador'?'<button class="ghost" id="nom">Nombres</button>':''}<button class="ghost" id="out">Salir</button></div></header>
-    <div class="tools"><input id="q" type="search" placeholder="Buscar por código, nombre, raza o linaje" value="${esc(filtro.q)}">
+    <div class="tools"><input id="q" type="search" placeholder="Buscar por código, nombre angelical o raza" value="${esc(filtro.q)}">
     <select id="ft"><option value="">Todos los tipos</option>${TIPOS.map(t=>`<option value="${t[0]}">${t[1]}</option>`).join('')}</select>
     <select id="fc"><option value="">Todos los coros</option>${coros.map(c=>`<option value="${c.id}">${esc(c.nombre)}</option>`).join('')}</select>
     <select id="fn" style="grid-column:1/-1;margin:0"><option value="">Luz y oscuridad</option><option value="luz">Luz</option><option value="oscuridad">Oscuridad</option></select></div>
@@ -179,7 +179,7 @@ async function detalle(id){
       ${s.coros_angelicos?`<span class="chip">${esc(s.coros_angelicos.nombre)}</span>`:''}${natChip(s.naturaleza, s.grado_oscuridad)}</div>
     ${(origen||raiz)?`<div class="priv">${raiz?`<div class="link" id="raiz">Registro principal: <b>${esc(raiz.codigo)}</b></div>`:''}${origen?`<div class="link" id="orig">Proviene de: <b>${esc(origen.codigo)}</b>${arriba?', registrada como '+esc(relTxt(arriba)):''}</div>`:''}</div>`:''}
     ${adm && ident ? `<div class="priv"><b>Solo administrador</b><br>${esc(ident.nombre_real)}${ident.contacto?'<br>'+esc(ident.contacto):''}<br><span class="mut">Consentimiento: ${ident.consentimiento?'sí':'no'}</span></div>`:''}
-    <div class="sec">${dato('Raza afín',s.raza_afin)}${dato('Linaje de luz (alma)',s.linaje_alma)}${dato('Nivel de ascensión',s.nivel_graduacion)}${dato('Notas',s.notas)}</div>
+    <div class="sec">${dato('Raza afín',s.raza_afin)}${dato('Nombre angelical',s.linaje_alma)}${dato('Nivel de ascensión',s.nivel_graduacion)}${dato('Notas',s.notas)}</div>
     <div class="sec"><h3>Linaje familiar</h3>${['paterno','materno','directo'].map(l => {
       const g = fam.filter(v => v.lado === l); if(!g.length) return '';
       return `<div class="sub">${LADOS.find(x => x[0] === l)[1]}</div>` + g.map(v => { const d = seres.find(x => x.id === v.ser_destino) || {};
@@ -249,7 +249,7 @@ function fichaForm(s, ident){
     {k:'tipo_encarnacion',l:'Encarnación',t:'select',o:ENC},
     {k:'coro_id',l:'Coro angélico',t:'select',o:[['','Sin definir'],...coros.map(c=>[c.id,c.nombre])]},
     {k:'raza_afin',l:'Raza estelar afín'},
-    {k:'linaje_alma',l:'Linaje de luz (línea del alma)'},
+    {k:'linaje_alma',l:'Nombre angelical'},
     {k:'nivel_graduacion',l:'Nivel de ascensión'},
     {k:'naturaleza',l:'Naturaleza (luz u oscuridad)',t:'select',o:NAT},
     {k:'grado_oscuridad',l:'Grado de oscuridad (solo si es oscuridad)',t:'select',o:GRADOS},
