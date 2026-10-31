@@ -36,7 +36,7 @@ header h2{font-size:22px}
 .chip{font-size:14px;color:var(--azul);border:1px solid var(--line);border-radius:20px;padding:1px 10px}
 .mut{color:var(--mut)}
 .chip.osc{color:var(--rojo);border-color:#6b3a4a}.chip.luz{color:var(--oro)}
-.link{cursor:pointer}.sub{color:var(--azul);font-size:16px;margin:14px 0 2px}
+.link{cursor:pointer}.peligro{border-color:var(--rojo);color:var(--rojo)}.sub{color:var(--azul);font-size:16px;margin:14px 0 2px}
 .fab{position:fixed;right:18px;bottom:calc(18px + env(safe-area-inset-bottom,0));width:58px;height:58px;border-radius:50%;border:0;background:var(--oro);color:#241b05;font-size:32px;line-height:1;box-shadow:0 6px 18px #0008;cursor:pointer}
 .sec{margin-top:22px}.sec h3{font-size:16px;margin-bottom:6px}
 .item{border-top:1px solid var(--line);padding:10px 0}
@@ -111,7 +111,7 @@ function siguienteCodigo(){
 }
 
 function lista(){
-  $('#app').innerHTML = `<header><h2>Seres de Luz</h2><button class="ghost" id="out">Salir</button></header>
+  $('#app').innerHTML = `<header><h2>Seres de Luz</h2><div class="row" style="margin:0">${rol==='administrador'?'<button class="ghost" id="nom">Nombres</button>':''}<button class="ghost" id="out">Salir</button></div></header>
     <div class="tools"><input id="q" type="search" placeholder="Buscar por código, nombre, raza o linaje" value="${esc(filtro.q)}">
     <select id="ft"><option value="">Todos los tipos</option>${TIPOS.map(t=>`<option value="${t[0]}">${t[1]}</option>`).join('')}</select>
     <select id="fc"><option value="">Todos los coros</option>${coros.map(c=>`<option value="${c.id}">${esc(c.nombre)}</option>`).join('')}</select>
@@ -123,8 +123,25 @@ function lista(){
   $('#fc').onchange = e => { filtro.coro = e.target.value; pinta(); };
   $('#fn').onchange = e => { filtro.nat = e.target.value; pinta(); };
   $('#out').onclick = async () => { await sb.auth.signOut(); login(); };
+  if($('#nom')) $('#nom').onclick = nombres;
   $('#nuevo').onclick = () => fichaForm(null, null);
   pinta();
+}
+
+async function nombres(){
+  const {data,error} = await sb.from('identidades').select('*');
+  if(error) return alert('No se pudo cargar: ' + error.message);
+  const filas = (data || []).map(i => ({i, s: seres.find(x => x.id === i.ser_id)})).filter(x => x.s)
+    .sort((a,b) => a.s.codigo.localeCompare(b.s.codigo));
+  $('#app').innerHTML = `<header><button class="ghost" id="atras">Volver</button><h2>Nombres reales</h2></header>
+    <p class="mut">Solo visible para el administrador. ${filas.length} registro(s).</p>
+    <input id="qn" type="search" placeholder="Buscar por nombre o código"><div id="lnom"></div>`;
+  const pintaN = () => { const q = $('#qn').value.toLowerCase();
+    $('#lnom').innerHTML = filas.filter(f => (f.s.codigo + ' ' + f.i.nombre_real).toLowerCase().includes(q)).map(f =>
+      `<div class="card" data-id="${f.s.id}"><b>${esc(f.s.codigo)}</b> ${esc(f.i.nombre_real)}
+      ${f.i.contacto?`<div class="mut">${esc(f.i.contacto)}</div>`:''}</div>`).join('') || '<p class="mut">Sin resultados.</p>';
+    document.querySelectorAll('#lnom .card').forEach(c => c.onclick = () => detalle(c.dataset.id)); };
+  $('#qn').oninput = pintaN; $('#atras').onclick = lista; pintaN();
 }
 
 function pinta(){
@@ -160,7 +177,7 @@ async function detalle(id){
       ${s.coros_angelicos?`<span class="chip">${esc(s.coros_angelicos.nombre)}</span>`:''}${natChip(s.naturaleza)}</div>
     ${origen?`<div class="priv link" id="orig">Originada desde <b>${esc(origen.codigo)}</b>${arriba?', registrada como '+esc(relTxt(arriba)):''}</div>`:''}
     ${adm && ident ? `<div class="priv"><b>Solo administrador</b><br>${esc(ident.nombre_real)}${ident.contacto?'<br>'+esc(ident.contacto):''}<br><span class="mut">Consentimiento: ${ident.consentimiento?'sí':'no'}</span></div>`:''}
-    <div class="sec">${dato('Raza afín',s.raza_afin)}${dato('Linaje de luz (alma)',s.linaje_alma)}${dato('Nivel de graduación',s.nivel_graduacion)}${dato('Notas',s.notas)}</div>
+    <div class="sec">${dato('Raza afín',s.raza_afin)}${dato('Linaje de luz (alma)',s.linaje_alma)}${dato('Nivel de ascensión',s.nivel_graduacion)}${dato('Notas',s.notas)}</div>
     <div class="sec"><h3>Linaje familiar</h3>${['paterno','materno','directo'].map(l => {
       const g = fam.filter(v => v.lado === l); if(!g.length) return '';
       return `<div class="sub">${LADOS.find(x => x[0] === l)[1]}</div>` + g.map(v => { const d = seres.find(x => x.id === v.ser_destino) || {};
@@ -173,10 +190,17 @@ async function detalle(id){
     <div class="sec"><h3>Afectaciones</h3>${af.map(x=>`<div class="item"><b>${x.categoria==='fisica'?'Física':'Espiritual'}</b>
       <span class="mut">${esc(x.fecha||'')} ${x.estado==='cesada'?'(cesada)':x.estado==='activa'?'(activa)':''}</span><br>${esc(x.descripcion)}
       ${x.fuente?`<br><span class="mut">Fuente: ${esc(x.fuente)}</span>`:''}</div>`).join('')||'<p class="mut">Sin afectaciones registradas.</p>'}
-      <button class="ghost" id="adda">Agregar afectación</button></div>`;
+      <button class="ghost" id="adda">Agregar afectación</button></div>
+    ${adm?'<div class="sec"><button class="ghost peligro" id="del">Eliminar esta ficha</button></div>':''}`;
   $('#atras').onclick = lista;
   document.querySelectorAll('.link[data-id]').forEach(e => e.onclick = () => detalle(e.dataset.id));
   if(origen) $('#orig').onclick = () => detalle(origen.id);
+  if(adm) $('#del').onclick = async () => {
+    if(!confirm('¿Eliminar la ficha ' + s.codigo + '? Se borrarán también sus ubicaciones, afectaciones, nombre real y vínculos. No se puede deshacer.')) return;
+    const r = await sb.from('seres').delete().eq('id', id);
+    if(r.error) return alert('No se pudo eliminar: ' + r.error.message);
+    await cargar(); lista();
+  };
   $('#adff').onclick = () => hoja('Nuevo familiar de ' + s.codigo, [
     {k:'lado',l:'Linaje',t:'select',o:LADOS},
     {k:'relacion',l:'Relación con ' + s.codigo,t:'select',o:REL},
@@ -219,7 +243,7 @@ function fichaForm(s, ident){
     {k:'coro_id',l:'Coro angélico',t:'select',o:[['','Sin definir'],...coros.map(c=>[c.id,c.nombre])]},
     {k:'raza_afin',l:'Raza estelar afín'},
     {k:'linaje_alma',l:'Linaje de luz (línea del alma)'},
-    {k:'nivel_graduacion',l:'Nivel de graduación'},
+    {k:'nivel_graduacion',l:'Nivel de ascensión'},
     {k:'naturaleza',l:'Naturaleza (luz u oscuridad)',t:'select',o:NAT},
     {k:'notas',l:'Notas',t:'area'},
     ...(adm ? [{k:'nombre_real',l:'Solo administrador: nombre real'},{k:'contacto',l:'Solo administrador: contacto'},
