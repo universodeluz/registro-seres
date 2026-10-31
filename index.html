@@ -69,7 +69,8 @@ const ENC = [['','Sin definir'],['encarnado','Encarnado'],['no_encarnado','No en
 const NAT = [['sin_definir','Sin definir'],['luz','Luz'],['oscuridad','Oscuridad']];
 const LADOS = [['paterno','Linaje paterno'],['materno','Linaje materno'],['directo','Línea directa (hermanos, hijos, sobrinos)']];
 const REL = ['bisabuelo','bisabuela','abuelo','abuela','padre','madre','tío','tía','hermano','hermana','pareja','hijo','hija','sobrino','sobrina','primo','prima','nieto','nieta','bisnieto','bisnieta','otro'].map(r => [r, r[0].toUpperCase() + r.slice(1)]);
-const natChip = n => n === 'luz' ? '<span class="chip luz">Luz</span>' : n === 'oscuridad' ? '<span class="chip osc">Oscuridad</span>' : '';
+const GRADOS = [['','Sin grado']].concat([1,2,3,4,5,6,7,8,9].map(n => [String(n), 'D-' + n]));
+const natChip = (n, g) => n === 'luz' ? '<span class="chip luz">Luz</span>' : n === 'oscuridad' ? '<span class="chip osc">Oscuridad' + (g ? ' D-' + g : '') + '</span>' : '';
 const relTxt = v => { const r = (REL.find(x => x[0] === v.relacion) || ['',''])[1].toLowerCase();
   return r + (v.lado && v.lado !== 'directo' && v.relacion !== 'padre' && v.relacion !== 'madre' ? ' ' + v.lado : ''); };
 
@@ -147,12 +148,12 @@ async function nombres(){
 function pinta(){
   const q = filtro.q.toLowerCase();
   const f = seres.filter(s =>
-    [s.codigo,s.nombre_publico,s.raza_afin,s.linaje_alma].join(' ').toLowerCase().includes(q) &&
+    [s.codigo,s.nombre_publico,s.raza_afin,s.linaje_alma,(seres.find(x => x.id === s.raiz_id)||{}).codigo].join(' ').toLowerCase().includes(q) &&
     (!filtro.tipo || s.tipo === filtro.tipo) && (!filtro.coro || String(s.coro_id) === filtro.coro) && (!filtro.nat || s.naturaleza === filtro.nat));
   $('#cards').innerHTML = f.map(s => `<div class="card" data-id="${s.id}"><b>${esc(s.codigo)}</b> ${esc(s.nombre_publico||'')}
     <div class="chips"><span class="chip">${s.tipo==='libro'?'Libros':'Persona real'}</span>
     ${s.coros_angelicos?`<span class="chip">${esc(s.coros_angelicos.nombre)}</span>`:''}
-    ${s.nivel_graduacion?`<span class="chip">${esc(s.nivel_graduacion)}</span>`:''}${natChip(s.naturaleza)}</div></div>`).join('')
+    ${s.nivel_graduacion?`<span class="chip">${esc(s.nivel_graduacion)}</span>`:''}${s.raiz_id?`<span class="chip">Principal ${esc((seres.find(x => x.id === s.raiz_id)||{}).codigo||'')}</span>`:''}${natChip(s.naturaleza, s.grado_oscuridad)}</div></div>`).join('')
     || '<p class="mut">No hay fichas todavía. Toca + para crear la primera.</p>';
   document.querySelectorAll('.card').forEach(c => c.onclick = () => detalle(c.dataset.id));
 }
@@ -168,22 +169,25 @@ async function detalle(id){
     sb.from('vinculos').select('*').eq('ser_origen', id).eq('rama','familia_sangre'),
     sb.from('vinculos').select('*').eq('ser_destino', id).eq('rama','familia_sangre')]);
   const ub = u.data || [], af = a.data || [], ident = i.data,
-    fam = fm.data || [], arriba = (up.data || [])[0], origen = seres.find(x => x.id === s.origen_id);
+    fam = fm.data || [], arriba = (up.data || [])[0], origen = seres.find(x => x.id === s.origen_id),
+    raiz = seres.find(x => x.id === s.raiz_id), derivados = seres.filter(x => x.raiz_id === id);
   const dato = (l,v) => v ? `<div class="item"><span class="mut">${l}</span><br>${esc(v)}</div>` : '';
   $('#app').innerHTML = `<header><button class="ghost" id="atras">Volver</button><button class="ghost" id="edit">Editar</button></header>
     <h2>${esc(s.codigo)} ${esc(s.nombre_publico||'')}</h2>
     <div class="chips"><span class="chip">${s.tipo==='libro'?'Libros':'Persona real'}</span>
       ${s.tipo_encarnacion?`<span class="chip">${s.tipo_encarnacion==='encarnado'?'Encarnado':'No encarnado'}</span>`:''}
-      ${s.coros_angelicos?`<span class="chip">${esc(s.coros_angelicos.nombre)}</span>`:''}${natChip(s.naturaleza)}</div>
-    ${origen?`<div class="priv link" id="orig">Originada desde <b>${esc(origen.codigo)}</b>${arriba?', registrada como '+esc(relTxt(arriba)):''}</div>`:''}
+      ${s.coros_angelicos?`<span class="chip">${esc(s.coros_angelicos.nombre)}</span>`:''}${natChip(s.naturaleza, s.grado_oscuridad)}</div>
+    ${(origen||raiz)?`<div class="priv">${raiz?`<div class="link" id="raiz">Registro principal: <b>${esc(raiz.codigo)}</b></div>`:''}${origen?`<div class="link" id="orig">Proviene de: <b>${esc(origen.codigo)}</b>${arriba?', registrada como '+esc(relTxt(arriba)):''}</div>`:''}</div>`:''}
     ${adm && ident ? `<div class="priv"><b>Solo administrador</b><br>${esc(ident.nombre_real)}${ident.contacto?'<br>'+esc(ident.contacto):''}<br><span class="mut">Consentimiento: ${ident.consentimiento?'sí':'no'}</span></div>`:''}
     <div class="sec">${dato('Raza afín',s.raza_afin)}${dato('Linaje de luz (alma)',s.linaje_alma)}${dato('Nivel de ascensión',s.nivel_graduacion)}${dato('Notas',s.notas)}</div>
     <div class="sec"><h3>Linaje familiar</h3>${['paterno','materno','directo'].map(l => {
       const g = fam.filter(v => v.lado === l); if(!g.length) return '';
       return `<div class="sub">${LADOS.find(x => x[0] === l)[1]}</div>` + g.map(v => { const d = seres.find(x => x.id === v.ser_destino) || {};
-        return `<div class="item link" data-id="${esc(d.id||'')}"><b>${esc(d.codigo||'')}</b> <span class="chip">${esc((REL.find(r => r[0] === v.relacion) || ['',''])[1])}</span>${natChip(d.naturaleza)}${v.temporalidad==='pasado'?' <span class="mut">(fallecido)</span>':''}</div>`; }).join('');
+        return `<div class="item link" data-id="${esc(d.id||'')}"><b>${esc(d.codigo||'')}</b> <span class="chip">${esc((REL.find(r => r[0] === v.relacion) || ['',''])[1])}</span>${natChip(d.naturaleza, d.grado_oscuridad)}${v.temporalidad==='pasado'?' <span class="mut">(fallecido)</span>':''}</div>`; }).join('');
     }).join('')}${fam.length?'':'<p class="mut">Sin familiares registrados.</p>'}
       <button class="ghost" id="adff">Agregar familiar</button></div>
+    ${derivados.length?`<div class="sec"><h3>Registros derivados (${derivados.length})</h3>${derivados.map(d => { const og = seres.find(x => x.id === d.origen_id) || {};
+      return `<div class="item link" data-id="${esc(d.id)}"><b>${esc(d.codigo)}</b> <span class="mut">proviene de ${esc(og.codigo||'')}</span> ${natChip(d.naturaleza, d.grado_oscuridad)}</div>`; }).join('')}</div>`:''}
     <div class="sec"><h3>Ubicaciones</h3>${ub.map(x=>`<div class="item">${esc([x.ciudad,x.estado_region,x.pais].filter(Boolean).join(', '))}
       <br><span class="mut">${esc(x.periodo||'')}${x.es_actual?' (actual)':''}</span></div>`).join('')||'<p class="mut">Sin ubicaciones.</p>'}
       <button class="ghost" id="addu">Agregar ubicación</button></div>
@@ -195,8 +199,10 @@ async function detalle(id){
   $('#atras').onclick = lista;
   document.querySelectorAll('.link[data-id]').forEach(e => e.onclick = () => detalle(e.dataset.id));
   if(origen) $('#orig').onclick = () => detalle(origen.id);
+  if(raiz) $('#raiz').onclick = () => detalle(raiz.id);
   if(adm) $('#del').onclick = async () => {
-    if(!confirm('¿Eliminar la ficha ' + s.codigo + '? Se borrarán también sus ubicaciones, afectaciones, nombre real y vínculos. No se puede deshacer.')) return;
+    const nd = seres.filter(x => x.raiz_id === id).length;
+    if(!confirm('¿Eliminar la ficha ' + s.codigo + '? Se borrarán también sus ubicaciones, afectaciones, nombre real y vínculos.' + (nd ? ' Tiene ' + nd + ' registro(s) derivado(s) que quedarán sin registro principal.' : '') + ' No se puede deshacer.')) return;
     const r = await sb.from('seres').delete().eq('id', id);
     if(r.error) return alert('No se pudo eliminar: ' + r.error.message);
     await cargar(); lista();
@@ -205,11 +211,12 @@ async function detalle(id){
     {k:'lado',l:'Linaje',t:'select',o:LADOS},
     {k:'relacion',l:'Relación con ' + s.codigo,t:'select',o:REL},
     {k:'naturaleza',l:'Naturaleza (luz u oscuridad)',t:'select',o:NAT},
+    {k:'grado_oscuridad',l:'Grado de oscuridad (solo si es oscuridad)',t:'select',o:GRADOS},
     {k:'temporalidad',l:'Estado',t:'select',o:[['presente','Presente (vive)'],['pasado','Pasado (fallecido)']]},
     {k:'notas',l:'Notas del vínculo',t:'area'}],
     {lado:'paterno',relacion:'padre',naturaleza:'sin_definir',temporalidad:'presente'},
     async o => {
-      const r = await sb.from('seres').insert({codigo:siguienteCodigo(), tipo:'persona_real', naturaleza:o.naturaleza, origen_id:id}).select().single();
+      const r = await sb.from('seres').insert({codigo:siguienteCodigo(), tipo:'persona_real', naturaleza:o.naturaleza, grado_oscuridad:(o.naturaleza === 'oscuridad' && o.grado_oscuridad) ? Number(o.grado_oscuridad) : null, origen_id:id, raiz_id:s.raiz_id || id}).select().single();
       if(r.error) return r.error;
       const r2 = await sb.from('vinculos').insert({ser_origen:id, ser_destino:r.data.id, rama:'familia_sangre', lado:o.lado, relacion:o.relacion, temporalidad:o.temporalidad, notas:o.notas});
       if(r2.error) return r2.error;
@@ -245,6 +252,7 @@ function fichaForm(s, ident){
     {k:'linaje_alma',l:'Linaje de luz (línea del alma)'},
     {k:'nivel_graduacion',l:'Nivel de ascensión'},
     {k:'naturaleza',l:'Naturaleza (luz u oscuridad)',t:'select',o:NAT},
+    {k:'grado_oscuridad',l:'Grado de oscuridad (solo si es oscuridad)',t:'select',o:GRADOS},
     {k:'notas',l:'Notas',t:'area'},
     ...(adm ? [{k:'nombre_real',l:'Solo administrador: nombre real'},{k:'contacto',l:'Solo administrador: contacto'},
                {k:'consentimiento',l:'La persona dio su consentimiento',t:'check'}] : [])];
@@ -253,6 +261,7 @@ function fichaForm(s, ident){
     delete o.nombre_real; delete o.contacto; delete o.consentimiento;
     o.coro_id = o.coro_id ? Number(o.coro_id) : null;
     if(o.tipo === 'persona_real') o.nombre_publico = null;
+    o.grado_oscuridad = (o.naturaleza === 'oscuridad' && o.grado_oscuridad) ? Number(o.grado_oscuridad) : null;
     const r = nuevo ? await sb.from('seres').insert(o).select().single()
                     : await sb.from('seres').update(o).eq('id', s.id).select().single();
     if(r.error) return r.error;
