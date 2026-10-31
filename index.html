@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0c1230">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Registro de Seres de Luz</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Crimson+Pro:wght@400;600&display=swap">
+<style>
+:root{--bg:#0c1230;--bg2:#141b45;--panel:#1a2252;--line:#2c3772;--oro:#d9b45a;--azul:#7fb0ff;--txt:#ece9f6;--mut:#9aa3cf;--rojo:#ff8d8d;
+ --serif:'Crimson Pro',Georgia,serif;--tit:'Cinzel',Georgia,serif}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--txt);font-family:var(--serif);font-size:18px;line-height:1.5}
+body{min-height:100vh;padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0);background:radial-gradient(120% 60% at 50% 0,var(--bg2),var(--bg) 70%) fixed}
+#app{max-width:640px;margin:0 auto;padding:0 16px 96px}
+h1,h2,h3{font-family:var(--tit);font-weight:700;margin:0;color:var(--oro);letter-spacing:.02em}
+input,select,textarea,button{font:inherit;font-size:16px;color:var(--txt)}
+input,select,textarea{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:4px}
+input[type=checkbox]{width:24px;height:24px;margin:8px 0 0}
+input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid var(--azul);outline-offset:1px}
+.btn,.ghost{min-height:46px;border-radius:10px;border:1px solid var(--oro);padding:0 18px;cursor:pointer}
+.btn{background:var(--oro);color:#241b05;font-weight:600}
+.ghost{background:transparent;color:var(--oro)}
+.login{padding-top:18vh;display:grid;gap:12px;text-align:center}
+.login h1{font-size:30px;line-height:1.2;margin-bottom:14px}
+.err{color:var(--rojo);min-height:1.5em;margin:0}
+header{display:flex;justify-content:space-between;align-items:center;padding:18px 0 10px}
+header h2{font-size:22px}
+.tools{display:grid;gap:8px;grid-template-columns:1fr 1fr}
+.tools input{grid-column:1/-1;margin:0}.tools select{margin:0}
+.card{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--oro);border-radius:6px 14px 14px 6px;padding:12px 14px;margin-top:10px;cursor:pointer}
+.card b{font-family:var(--tit);color:var(--oro);font-size:17px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.chip{font-size:14px;color:var(--azul);border:1px solid var(--line);border-radius:20px;padding:1px 10px}
+.mut{color:var(--mut)}
+.fab{position:fixed;right:18px;bottom:calc(18px + env(safe-area-inset-bottom,0));width:58px;height:58px;border-radius:50%;border:0;background:var(--oro);color:#241b05;font-size:32px;line-height:1;box-shadow:0 6px 18px #0008;cursor:pointer}
+.sec{margin-top:22px}.sec h3{font-size:16px;margin-bottom:6px}
+.item{border-top:1px solid var(--line);padding:10px 0}
+.row{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
+.priv{border:1px dashed var(--oro);border-radius:10px;padding:10px 12px;margin-top:14px}
+#sheet{position:fixed;inset:0;background:#000a;display:flex;align-items:flex-end;z-index:5}
+#sheet[hidden]{display:none}
+.hoja{background:var(--bg2);width:100%;max-width:640px;margin:0 auto;max-height:92vh;overflow:auto;border-radius:18px 18px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom,0))}
+.hoja label{display:block;margin-top:12px;color:var(--mut);font-size:16px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="sheet" hidden></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.js"></script>
+<script>
+// ====== PEGA AQUÍ TUS DATOS DE SUPABASE (Project Settings > API) ======
+const SUPABASE_URL = 'https://hhnmkaodpequxqkhuitz.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_u2ycDvACsEddFbUIfha-_A_J0L45eaX';   // nunca uses la service_role
+// ======================================================================
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+let rol = null, coros = [], seres = [], filtro = {q:'', tipo:'', coro:''};
+
+const TIPOS = [['persona_real','Persona real'],['libro','Ser de los libros']];
+const ENC = [['','Sin definir'],['encarnado','Encarnado'],['no_encarnado','No encarnado']];
+
+async function init(){
+  const {data:{session}} = await sb.auth.getSession();
+  session ? entrar() : login();
+}
+
+function login(msg=''){
+  $('#app').innerHTML = `<div class="login"><h1>Registro de<br>Seres de Luz</h1>
+    <input id="em" type="email" placeholder="Correo" autocomplete="username">
+    <input id="pw" type="password" placeholder="Contraseña" autocomplete="current-password">
+    <button class="btn" id="go">Entrar</button><p class="err">${esc(msg)}</p></div>`;
+  $('#go').onclick = async () => {
+    const {error} = await sb.auth.signInWithPassword({email:$('#em').value.trim(), password:$('#pw').value});
+    error ? login('Correo o contraseña incorrectos.') : entrar();
+  };
+}
+
+async function entrar(){
+  const {data:{user}} = await sb.auth.getUser();
+  const {data:p} = await sb.from('perfiles').select('rol').eq('id', user.id).maybeSingle();
+  if(!p){ await sb.auth.signOut(); return login('Tu cuenta aún no tiene permisos. Avisa al administrador.'); }
+  rol = p.rol;
+  const {data:c} = await sb.from('coros_angelicos').select('*').order('id');
+  coros = c || [];
+  await cargar(); lista();
+}
+
+async function cargar(){
+  const {data,error} = await sb.from('seres').select('*,coros_angelicos(nombre)').order('codigo');
+  if(error) alert('No se pudieron cargar las fichas: ' + error.message);
+  seres = data || [];
+}
+
+function siguienteCodigo(){
+  const n = seres.map(s => parseInt((s.codigo||'').replace(/\D/g,''),10)).filter(Number.isFinite);
+  return 'SL-' + String((n.length ? Math.max(...n) : 0) + 1).padStart(4,'0');
+}
+
+function lista(){
+  $('#app').innerHTML = `<header><h2>Seres de Luz</h2><button class="ghost" id="out">Salir</button></header>
+    <div class="tools"><input id="q" type="search" placeholder="Buscar por código, nombre, raza o linaje" value="${esc(filtro.q)}">
+    <select id="ft"><option value="">Todos los tipos</option>${TIPOS.map(t=>`<option value="${t[0]}">${t[1]}</option>`).join('')}</select>
+    <select id="fc"><option value="">Todos los coros</option>${coros.map(c=>`<option value="${c.id}">${esc(c.nombre)}</option>`).join('')}</select></div>
+    <div id="cards"></div><button class="fab" id="nuevo" aria-label="Nueva ficha">+</button>`;
+  $('#ft').value = filtro.tipo; $('#fc').value = filtro.coro;
+  $('#q').oninput = e => { filtro.q = e.target.value; pinta(); };
+  $('#ft').onchange = e => { filtro.tipo = e.target.value; pinta(); };
+  $('#fc').onchange = e => { filtro.coro = e.target.value; pinta(); };
+  $('#out').onclick = async () => { await sb.auth.signOut(); login(); };
+  $('#nuevo').onclick = () => fichaForm(null, null);
+  pinta();
+}
+
+function pinta(){
+  const q = filtro.q.toLowerCase();
+  const f = seres.filter(s =>
+    [s.codigo,s.nombre_publico,s.raza_afin,s.linaje_alma].join(' ').toLowerCase().includes(q) &&
+    (!filtro.tipo || s.tipo === filtro.tipo) && (!filtro.coro || String(s.coro_id) === filtro.coro));
+  $('#cards').innerHTML = f.map(s => `<div class="card" data-id="${s.id}"><b>${esc(s.codigo)}</b> ${esc(s.nombre_publico||'')}
+    <div class="chips"><span class="chip">${s.tipo==='libro'?'Libros':'Persona real'}</span>
+    ${s.coros_angelicos?`<span class="chip">${esc(s.coros_angelicos.nombre)}</span>`:''}
+    ${s.nivel_graduacion?`<span class="chip">${esc(s.nivel_graduacion)}</span>`:''}</div></div>`).join('')
+    || '<p class="mut">No hay fichas todavía. Toca + para crear la primera.</p>';
+  document.querySelectorAll('.card').forEach(c => c.onclick = () => detalle(c.dataset.id));
+}
+
+async function detalle(id){
+  const s = seres.find(x => x.id === id);
+  const adm = rol === 'administrador';
+  const [u,a,i] = await Promise.all([
+    sb.from('ubicaciones').select('*').eq('ser_id', id).order('es_actual',{ascending:false}),
+    sb.from('afectaciones').select('*').eq('ser_id', id).order('fecha',{ascending:false}),
+    adm ? sb.from('identidades').select('*').eq('ser_id', id).maybeSingle() : Promise.resolve({data:null})]);
+  const ub = u.data || [], af = a.data || [], ident = i.data;
+  const dato = (l,v) => v ? `<div class="item"><span class="mut">${l}</span><br>${esc(v)}</div>` : '';
+  $('#app').innerHTML = `<header><button class="ghost" id="atras">Volver</button><button class="ghost" id="edit">Editar</button></header>
+    <h2>${esc(s.codigo)} ${esc(s.nombre_publico||'')}</h2>
+    <div class="chips"><span class="chip">${s.tipo==='libro'?'Libros':'Persona real'}</span>
+      ${s.tipo_encarnacion?`<span class="chip">${s.tipo_encarnacion==='encarnado'?'Encarnado':'No encarnado'}</span>`:''}
+      ${s.coros_angelicos?`<span class="chip">${esc(s.coros_angelicos.nombre)}</span>`:''}</div>
+    ${adm && ident ? `<div class="priv"><b>Solo administrador</b><br>${esc(ident.nombre_real)}${ident.contacto?'<br>'+esc(ident.contacto):''}<br><span class="mut">Consentimiento: ${ident.consentimiento?'sí':'no'}</span></div>`:''}
+    <div class="sec">${dato('Raza afín',s.raza_afin)}${dato('Linaje de luz (alma)',s.linaje_alma)}${dato('Nivel de graduación',s.nivel_graduacion)}${dato('Notas',s.notas)}</div>
+    <div class="sec"><h3>Ubicaciones</h3>${ub.map(x=>`<div class="item">${esc([x.ciudad,x.estado_region,x.pais].filter(Boolean).join(', '))}
+      <br><span class="mut">${esc(x.periodo||'')}${x.es_actual?' (actual)':''}</span></div>`).join('')||'<p class="mut">Sin ubicaciones.</p>'}
+      <button class="ghost" id="addu">Agregar ubicación</button></div>
+    <div class="sec"><h3>Afectaciones</h3>${af.map(x=>`<div class="item"><b>${x.categoria==='fisica'?'Física':'Espiritual'}</b>
+      <span class="mut">${esc(x.fecha||'')} ${x.estado==='cesada'?'(cesada)':x.estado==='activa'?'(activa)':''}</span><br>${esc(x.descripcion)}
+      ${x.fuente?`<br><span class="mut">Fuente: ${esc(x.fuente)}</span>`:''}</div>`).join('')||'<p class="mut">Sin afectaciones registradas.</p>'}
+      <button class="ghost" id="adda">Agregar afectación</button></div>`;
+  $('#atras').onclick = lista;
+  $('#edit').onclick = () => fichaForm(s, ident);
+  $('#addu').onclick = () => hoja('Nueva ubicación', [
+    {k:'pais',l:'País'},{k:'estado_region',l:'Estado o región'},{k:'ciudad',l:'Ciudad (opcional)'},
+    {k:'periodo',l:'Periodo (ej. encarnación actual)'},{k:'es_actual',l:'Es la ubicación actual',t:'check'},{k:'notas',l:'Notas',t:'area'}],
+    {es_actual:true}, async o => { if(!o.pais) return {message:'Falta el país.'};
+      const r = await sb.from('ubicaciones').insert({...o, ser_id:id}); if(!r.error) detalle(id); return r.error; });
+  $('#adda').onclick = () => hoja('Nueva afectación', [
+    {k:'categoria',l:'Tipo',t:'select',o:[['espiritual','Espiritual'],['fisica','Física']]},
+    {k:'descripcion',l:'Descripción (como la reporta la persona)',t:'area'},{k:'fecha',l:'Fecha',t:'date'},
+    {k:'fuente',l:'Fuente (ej. reportada por la persona)'},
+    {k:'estado',l:'Estado',t:'select',o:[['activa','Activa'],['cesada','Cesada']]}],
+    {categoria:'espiritual',fuente:'Reportada por la persona',estado:'activa'},
+    async o => { if(!o.descripcion) return {message:'Falta la descripción.'};
+      const r = await sb.from('afectaciones').insert({...o, ser_id:id}); if(!r.error) detalle(id); return r.error; });
+}
+
+function fichaForm(s, ident){
+  const nuevo = !s, adm = rol === 'administrador';
+  const v = {codigo:siguienteCodigo(), tipo:'persona_real', ...(s||{}),
+    ...(ident ? {nombre_real:ident.nombre_real, contacto:ident.contacto, consentimiento:ident.consentimiento} : {})};
+  const campos = [
+    {k:'codigo',l:'Código'},
+    {k:'tipo',l:'Tipo',t:'select',o:TIPOS},
+    {k:'nombre_publico',l:'Nombre (solo seres de los libros)'},
+    {k:'tipo_encarnacion',l:'Encarnación',t:'select',o:ENC},
+    {k:'coro_id',l:'Coro angélico',t:'select',o:[['','Sin definir'],...coros.map(c=>[c.id,c.nombre])]},
+    {k:'raza_afin',l:'Raza estelar afín'},
+    {k:'linaje_alma',l:'Linaje de luz (línea del alma)'},
+    {k:'nivel_graduacion',l:'Nivel de graduación'},
+    {k:'notas',l:'Notas',t:'area'},
+    ...(adm ? [{k:'nombre_real',l:'Solo administrador: nombre real'},{k:'contacto',l:'Solo administrador: contacto'},
+               {k:'consentimiento',l:'La persona dio su consentimiento',t:'check'}] : [])];
+  hoja(nuevo ? 'Nueva ficha' : 'Editar ficha', campos, v, async o => {
+    const id_ = {nombre_real:o.nombre_real, contacto:o.contacto, consentimiento:!!o.consentimiento};
+    delete o.nombre_real; delete o.contacto; delete o.consentimiento;
+    o.coro_id = o.coro_id ? Number(o.coro_id) : null;
+    if(o.tipo === 'persona_real') o.nombre_publico = null;
+    const r = nuevo ? await sb.from('seres').insert(o).select().single()
+                    : await sb.from('seres').update(o).eq('id', s.id).select().single();
+    if(r.error) return r.error;
+    if(adm && o.tipo === 'persona_real' && id_.nombre_real){
+      const hoy = new Date().toISOString().slice(0,10);
+      const r2 = await sb.from('identidades').upsert({ser_id:r.data.id, ...id_,
+        fecha_consentimiento: id_.consentimiento ? ((ident && ident.fecha_consentimiento) || hoy) : null});
+      if(r2.error) return r2.error;
+    }
+    await cargar(); detalle(r.data.id);
+  });
+}
+
+// Hoja inferior genérica para formularios
+function hoja(titulo, campos, valores, guardar){
+  const h = $('#sheet'); h.hidden = false;
+  h.innerHTML = `<div class="hoja"><h3>${esc(titulo)}</h3><form id="fm">${campos.map(c => {
+    const v = valores[c.k] ?? ''; let el;
+    if(c.t === 'select') el = `<select name="${c.k}">${c.o.map(o=>`<option value="${esc(o[0])}" ${String(o[0])===String(v)?'selected':''}>${esc(o[1])}</option>`).join('')}</select>`;
+    else if(c.t === 'area') el = `<textarea name="${c.k}" rows="3">${esc(v)}</textarea>`;
+    else if(c.t === 'check') el = `<input type="checkbox" name="${c.k}" ${v?'checked':''}>`;
+    else el = `<input name="${c.k}" type="${c.t||'text'}" value="${esc(v)}">`;
+    return `<label>${esc(c.l)}${el}</label>`; }).join('')}
+    <div class="row"><button type="button" class="ghost" id="cx">Cancelar</button><button class="btn">Guardar</button></div></form></div>`;
+  $('#cx').onclick = cerrar;
+  $('#fm').onsubmit = async e => {
+    e.preventDefault(); const o = {};
+    campos.forEach(c => { const el = e.target.elements[c.k];
+      o[c.k] = c.t === 'check' ? el.checked : (el.value.trim() === '' ? null : el.value.trim()); });
+    const err = await guardar(o);
+    err ? alert('No se pudo guardar: ' + err.message) : cerrar();
+  };
+}
+function cerrar(){ const h = $('#sheet'); h.hidden = true; h.innerHTML = ''; }
+
+init();
+</script>
+</body>
+  </html>
+  
