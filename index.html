@@ -36,7 +36,13 @@ header h2{font-size:22px}
 .chip{font-size:14px;color:var(--azul);border:1px solid var(--line);border-radius:20px;padding:1px 10px}
 .mut{color:var(--mut)}
 .chip.osc{color:var(--rojo);border-color:#6b3a4a}.chip.luz{color:var(--oro)}
-.link{cursor:pointer}.peligro{border-color:var(--rojo);color:var(--rojo)}.sub{color:var(--azul);font-size:16px;margin:14px 0 2px}
+.link{cursor:pointer}.peligro{border-color:var(--rojo);color:var(--rojo)}
+.grp{background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:12px}.grp summary{cursor:pointer;list-style:none}.grp summary::-webkit-details-marker{display:none}.grp summary .mut{display:block;font-size:15px}
+header{flex-wrap:wrap;gap:8px}header h2{font-size:20px}header .ghost{padding:0 12px;font-size:15px;min-height:40px}
+#mapa{height:58vh;border-radius:12px;border:1px solid var(--line);margin-top:10px}
+.leaflet-container{background:#0c1230;font-family:var(--serif)}
+.leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.7)}
+.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--bg2);color:var(--txt)}.sub{color:var(--azul);font-size:16px;margin:14px 0 2px}
 .fab{position:fixed;right:18px;bottom:calc(18px + env(safe-area-inset-bottom,0));width:58px;height:58px;border-radius:50%;border:0;background:var(--oro);color:#241b05;font-size:32px;line-height:1;box-shadow:0 6px 18px #0008;cursor:pointer}
 .sec{margin-top:22px}.sec h3{font-size:16px;margin-bottom:6px}
 .item{border-top:1px solid var(--line);padding:10px 0}
@@ -47,11 +53,13 @@ header h2{font-size:22px}
 .hoja{background:var(--bg2);width:100%;max-width:640px;margin:0 auto;max-height:92vh;overflow:auto;border-radius:18px 18px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom,0))}
 .hoja label{display:block;margin-top:12px;color:var(--mut);font-size:16px}
 </style>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 </head>
 <body>
 <div id="app"></div>
 <div id="sheet" hidden></div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.js"></script>
 <script>
 // ====== PEGA AQUÍ TUS DATOS DE SUPABASE (Project Settings > API) ======
@@ -70,6 +78,8 @@ const NAT = [['sin_definir','Sin definir'],['luz','Luz'],['oscuridad','Oscuridad
 const LADOS = [['paterno','Linaje paterno'],['materno','Linaje materno'],['directo','Línea directa (hermanos, hijos, sobrinos)']];
 const REL = ['bisabuelo','bisabuela','abuelo','abuela','padre','madre','tío','tía','hermano','hermana','pareja','hijo','hija','sobrino','sobrina','primo','prima','nieto','nieta','bisnieto','bisnieta','otro'].map(r => [r, r[0].toUpperCase() + r.slice(1)]);
 const GRADOS = [['','Sin grado']].concat([1,2,3,4,5,6,7,8,9].map(n => [String(n), 'D-' + n]));
+const raizDe = s => seres.find(x => x.id === s.raiz_id) || s;
+const grupoNombre = r => r.grupo ? r.grupo + ' (' + r.codigo + ')' : 'Familia ' + r.codigo;
 const natChip = (n, g) => n === 'luz' ? '<span class="chip luz">Luz</span>' : n === 'oscuridad' ? '<span class="chip osc">Oscuridad' + (g ? ' D-' + g : '') + '</span>' : '';
 const relTxt = v => { const r = (REL.find(x => x[0] === v.relacion) || ['',''])[1].toLowerCase();
   return r + (v.lado && v.lado !== 'directo' && v.relacion !== 'padre' && v.relacion !== 'madre' ? ' ' + v.lado : ''); };
@@ -112,7 +122,7 @@ function siguienteCodigo(){
 }
 
 function lista(){
-  $('#app').innerHTML = `<header><h2>Seres de Luz</h2><div class="row" style="margin:0">${rol==='administrador'?'<button class="ghost" id="nom">Nombres</button>':''}<button class="ghost" id="out">Salir</button></div></header>
+  $('#app').innerHTML = `<header><h2>Seres de Luz</h2><div class="row" style="margin:0"><button class="ghost" id="mapb">Mapa</button>${rol==='administrador'?'<button class="ghost" id="nom">Nombres</button>':''}<button class="ghost" id="out">Salir</button></div></header>
     <div class="tools"><input id="q" type="search" placeholder="Buscar por código, nombre angelical o raza" value="${esc(filtro.q)}">
     <select id="ft"><option value="">Todos los tipos</option>${TIPOS.map(t=>`<option value="${t[0]}">${t[1]}</option>`).join('')}</select>
     <select id="fc"><option value="">Todos los coros</option>${coros.map(c=>`<option value="${c.id}">${esc(c.nombre)}</option>`).join('')}</select>
@@ -125,8 +135,80 @@ function lista(){
   $('#fn').onchange = e => { filtro.nat = e.target.value; pinta(); };
   $('#out').onclick = async () => { await sb.auth.signOut(); login(); };
   if($('#nom')) $('#nom').onclick = nombres;
+  $('#mapb').onclick = verMapa;
   $('#nuevo').onclick = () => fichaForm(null, null);
   pinta();
+}
+
+function mapaBase(m){ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:18, attribution:'© OpenStreetMap'}).addTo(m); }
+
+async function lugarDe(lat, lng){
+  try{
+    const r = await fetch('https://nominatim.openstreetmap.org/reverse?format=json&zoom=10&accept-language=es&lat=' + lat + '&lon=' + lng);
+    const a = (await r.json()).address || {};
+    return {pais:a.country || '', estado_region:a.state || a.region || '', ciudad:a.city || a.town || a.village || a.county || ''};
+  }catch(e){ return {}; }
+}
+
+// Elegir un punto aproximado (se guarda redondeado a 0.1 grado, unos 10 km)
+function elegirPunto(cb){
+  const h = $('#sheet'); h.hidden = false;
+  h.innerHTML = `<div class="hoja" style="height:92vh;display:flex;flex-direction:column"><h3>Ubicación aproximada</h3>
+    <div style="display:flex;gap:8px;margin-top:8px"><input id="qlug" placeholder="Buscar lugar (ciudad, estado o país)" style="margin:0"><button type="button" class="ghost" id="blug">Buscar</button></div>
+    <p class="mut" style="margin:6px 0">Toca el mapa para marcar el punto. Se guarda aproximado, unos 10 km.</p>
+    <div id="pmap" style="flex:1;min-height:240px;border-radius:12px;border:1px solid var(--line)"></div>
+    <div class="row"><button type="button" class="ghost" id="pcx">Cancelar</button><button type="button" class="ghost" id="pom">Sin mapa</button><button type="button" class="btn" id="pok" disabled>Usar este punto</button></div></div>`;
+  const m = L.map('pmap').setView([7.5,-66], 5); mapaBase(m);
+  setTimeout(() => m.invalidateSize(), 100);
+  let mk = null, pt = null;
+  m.on('click', e => {
+    pt = [Math.round(e.latlng.lat * 10) / 10, Math.round(e.latlng.lng * 10) / 10];
+    if(mk) mk.setLatLng(pt); else mk = L.circleMarker(pt, {radius:10, color:'#d9b45a', fillColor:'#d9b45a', fillOpacity:.6}).addTo(m);
+    $('#pok').disabled = false;
+  });
+  $('#blug').onclick = async () => {
+    const q = $('#qlug').value.trim(); if(!q) return;
+    try{
+      const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=es&q=' + encodeURIComponent(q));
+      const j = await r.json();
+      j[0] ? m.setView([+j[0].lat, +j[0].lon], 9) : alert('No se encontró ese lugar.');
+    }catch(e){ alert('No se pudo buscar el lugar.'); }
+  };
+  $('#pcx').onclick = () => { m.remove(); cerrar(); };
+  $('#pom').onclick = () => { m.remove(); cerrar(); cb(null); };
+  $('#pok').onclick = () => { m.remove(); cerrar(); cb(pt); };
+}
+
+async function verMapa(){
+  const {data,error} = await sb.from('ubicaciones').select('*').not('lat','is',null);
+  if(error) return alert('No se pudo cargar el mapa: ' + error.message);
+  const pts = (data || []).map(u => ({u, s: seres.find(x => x.id === u.ser_id)})).filter(x => x.s);
+  const grupos = [...new Map(pts.map(x => { const r = raizDe(x.s); return [r.id, grupoNombre(r)]; })).entries()].sort((a,b) => a[1].localeCompare(b[1]));
+  $('#app').innerHTML = `<header><button class="ghost" id="atras">Volver</button><h2>Mapa</h2></header>
+    <div class="tools"><select id="mn"><option value="">Luz y oscuridad</option><option value="luz">Luz</option><option value="oscuridad">Oscuridad</option></select>
+    <select id="mg"><option value="">Todos los grupos</option>${grupos.map(g => `<option value="${esc(g[0])}">${esc(g[1])}</option>`).join('')}</select></div>
+    <div id="mapa"></div><p class="mut" id="mcount"></p>
+    <div class="chips"><span class="chip luz">Luz</span><span class="chip osc">Oscuridad (más grande, mayor grado D)</span><span class="chip">Sin definir</span></div>`;
+  const m = L.map('mapa'); mapaBase(m);
+  const capa = L.layerGroup().addTo(m);
+  const dibuja = () => {
+    capa.clearLayers(); const fn = $('#mn').value, fg = $('#mg').value; let n = 0;
+    pts.forEach(({u,s}) => {
+      if((fn && s.naturaleza !== fn) || (fg && raizDe(s).id !== fg)) return;
+      const osc = s.naturaleza === 'oscuridad', luz = s.naturaleza === 'luz';
+      const col = osc ? '#ff6b6b' : luz ? '#d9b45a' : '#7fb0ff';
+      const c = L.circleMarker([u.lat, u.lng], {radius: osc ? 6 + (s.grado_oscuridad || 3) : 8, color: col, fillColor: col, fillOpacity:.55, weight:2}).addTo(capa);
+      c.bindPopup(`<b>${esc(s.codigo)}</b><br>${esc([u.ciudad,u.estado_region,u.pais].filter(Boolean).join(', '))}<br>${osc ? 'Oscuridad' + (s.grado_oscuridad ? ' D-' + s.grado_oscuridad : '') : luz ? 'Luz' : 'Sin definir'}<br>Grupo: ${esc(grupoNombre(raizDe(s)))}${s.linaje_alma ? '<br>' + esc(s.linaje_alma) : ''}<br><button class="ghost" style="min-height:36px;margin-top:6px" data-id="${esc(s.id)}">Abrir ficha</button>`);
+      c.on('popupopen', e => { const b = e.popup.getElement().querySelector('button'); if(b) b.onclick = () => { m.remove(); detalle(b.dataset.id); }; });
+      n++;
+    });
+    $('#mcount').textContent = n ? n + ' punto(s) en el mapa.' : 'Aún no hay puntos. Abre una ficha, toca una ubicación y márcala en el mapa.';
+    const b = capa.getBounds();
+    b.isValid() ? m.fitBounds(b.pad(.3), {maxZoom:9}) : m.setView([7.5,-66], 5);
+  };
+  $('#mn').onchange = dibuja; $('#mg').onchange = dibuja;
+  $('#atras').onclick = () => { m.remove(); lista(); };
+  dibuja(); setTimeout(() => m.invalidateSize(), 100);
 }
 
 async function nombres(){
@@ -134,27 +216,46 @@ async function nombres(){
   if(error) return alert('No se pudo cargar: ' + error.message);
   const filas = (data || []).map(i => ({i, s: seres.find(x => x.id === i.ser_id)})).filter(x => x.s)
     .sort((a,b) => a.s.codigo.localeCompare(b.s.codigo));
+  const cuenta = n => filas.filter(f => f.s.naturaleza === n).length;
   $('#app').innerHTML = `<header><button class="ghost" id="atras">Volver</button><h2>Nombres reales</h2></header>
-    <p class="mut">Solo visible para el administrador. ${filas.length} registro(s).</p>
-    <input id="qn" type="search" placeholder="Buscar por nombre o código"><div id="lnom"></div>`;
-  const pintaN = () => { const q = $('#qn').value.toLowerCase();
-    $('#lnom').innerHTML = filas.filter(f => (f.s.codigo + ' ' + f.i.nombre_real).toLowerCase().includes(q)).map(f =>
-      `<div class="card" data-id="${f.s.id}"><b>${esc(f.s.codigo)}</b> ${esc(f.i.nombre_real)}
-      ${f.i.contacto?`<div class="mut">${esc(f.i.contacto)}</div>`:''}</div>`).join('') || '<p class="mut">Sin resultados.</p>';
-    document.querySelectorAll('#lnom .card').forEach(c => c.onclick = () => detalle(c.dataset.id)); };
-  $('#qn').oninput = pintaN; $('#atras').onclick = lista; pintaN();
+    <p class="mut">Solo visible para el administrador. ${filas.length} registro(s): ${cuenta('luz')} luz, ${cuenta('oscuridad')} oscuridad, ${cuenta('sin_definir')} sin definir.</p>
+    <div class="tools"><input id="qn" type="search" placeholder="Buscar por nombre o código">
+    <select id="nn" style="grid-column:1/-1;margin:0"><option value="">Luz, oscuridad y sin definir</option><option value="luz">Solo luz</option><option value="oscuridad">Solo oscuridad</option><option value="sin_definir">Sin definir</option></select></div>
+    <div id="lnom"></div>`;
+  const pintaN = () => {
+    const q = $('#qn').value.toLowerCase(), fn = $('#nn').value;
+    const f = filas.filter(x => (!fn || x.s.naturaleza === fn) && (x.s.codigo + ' ' + x.i.nombre_real).toLowerCase().includes(q));
+    const fila = x => `<div class="card" data-id="${x.s.id}"><b>${esc(x.s.codigo)}</b> ${esc(x.i.nombre_real)} ${natChip(x.s.naturaleza, x.s.grado_oscuridad)}
+      ${x.i.contacto ? `<div class="mut">${esc(x.i.contacto)}</div>` : ''}</div>`;
+    const bloque = (n, t) => {
+      const g = f.filter(x => x.s.naturaleza === n);
+      if(n === 'oscuridad') g.sort((a,b) => (a.s.grado_oscuridad || 99) - (b.s.grado_oscuridad || 99));
+      return g.length ? `<div class="sub">${t} (${g.length})</div>` + g.map(fila).join('') : '';
+    };
+    $('#lnom').innerHTML = bloque('luz','Luz') + bloque('oscuridad','Oscuridad') + bloque('sin_definir','Sin definir') || '<p class="mut">Sin resultados.</p>';
+    document.querySelectorAll('#lnom .card').forEach(c => c.onclick = () => detalle(c.dataset.id));
+  };
+  $('#qn').oninput = pintaN; $('#nn').onchange = pintaN; $('#atras').onclick = lista; pintaN();
 }
 
 function pinta(){
-  const q = filtro.q.toLowerCase();
+  const q = filtro.q.toLowerCase(), filtrando = q || filtro.tipo || filtro.coro || filtro.nat;
   const f = seres.filter(s =>
-    [s.codigo,s.nombre_publico,s.raza_afin,s.linaje_alma,(seres.find(x => x.id === s.raiz_id)||{}).codigo].join(' ').toLowerCase().includes(q) &&
+    [s.codigo,s.nombre_publico,s.raza_afin,s.linaje_alma,grupoNombre(raizDe(s))].join(' ').toLowerCase().includes(q) &&
     (!filtro.tipo || s.tipo === filtro.tipo) && (!filtro.coro || String(s.coro_id) === filtro.coro) && (!filtro.nat || s.naturaleza === filtro.nat));
-  $('#cards').innerHTML = f.map(s => `<div class="card" data-id="${s.id}"><b>${esc(s.codigo)}</b> ${esc(s.nombre_publico||'')}
+  const grupos = new Map();
+  f.forEach(s => { const r = raizDe(s); if(!grupos.has(r.id)) grupos.set(r.id, {r, m:[]}); grupos.get(r.id).m.push(s); });
+  const tarjeta = s => `<div class="card" data-id="${s.id}"><b>${esc(s.codigo)}</b> ${esc(s.nombre_publico||'')}
     <div class="chips"><span class="chip">${s.tipo==='libro'?'Libros':'Persona real'}</span>
     ${s.coros_angelicos?`<span class="chip">${esc(s.coros_angelicos.nombre)}</span>`:''}
-    ${s.nivel_graduacion?`<span class="chip">${esc(s.nivel_graduacion)}</span>`:''}${s.raiz_id?`<span class="chip">Principal ${esc((seres.find(x => x.id === s.raiz_id)||{}).codigo||'')}</span>`:''}${natChip(s.naturaleza, s.grado_oscuridad)}</div></div>`).join('')
-    || '<p class="mut">No hay fichas todavía. Toca + para crear la primera.</p>';
+    ${s.nivel_graduacion?`<span class="chip">${esc(s.nivel_graduacion)}</span>`:''}${natChip(s.naturaleza, s.grado_oscuridad)}</div></div>`;
+  $('#cards').innerHTML = [...grupos.values()].sort((a,b) => a.r.codigo.localeCompare(b.r.codigo)).map(({r,m}) => {
+    const todos = seres.filter(x => raizDe(x).id === r.id);
+    const nl = todos.filter(x => x.naturaleza === 'luz').length, no = todos.filter(x => x.naturaleza === 'oscuridad').length;
+    return `<details class="grp" ${filtrando ? 'open' : ''}><summary><b>${esc(grupoNombre(r))}</b> ${natChip(r.naturaleza, r.grado_oscuridad)}
+      <span class="mut">${todos.length} miembro(s), ${nl} luz, ${no} oscuridad</span></summary>
+      ${m.sort((a,b) => a.id === r.id ? -1 : b.id === r.id ? 1 : a.codigo.localeCompare(b.codigo)).map(tarjeta).join('')}</details>`;
+  }).join('') || '<p class="mut">No hay fichas todavía. Toca + para crear la primera.</p>';
   document.querySelectorAll('.card').forEach(c => c.onclick = () => detalle(c.dataset.id));
 }
 
@@ -179,7 +280,7 @@ async function detalle(id){
       ${s.coros_angelicos?`<span class="chip">${esc(s.coros_angelicos.nombre)}</span>`:''}${natChip(s.naturaleza, s.grado_oscuridad)}</div>
     ${(origen||raiz)?`<div class="priv">${raiz?`<div class="link" id="raiz">Registro principal: <b>${esc(raiz.codigo)}</b></div>`:''}${origen?`<div class="link" id="orig">Proviene de: <b>${esc(origen.codigo)}</b>${arriba?', registrada como '+esc(relTxt(arriba)):''}</div>`:''}</div>`:''}
     ${adm && ident ? `<div class="priv"><b>Solo administrador</b><br>${esc(ident.nombre_real)}${ident.contacto?'<br>'+esc(ident.contacto):''}<br><span class="mut">Consentimiento: ${ident.consentimiento?'sí':'no'}</span></div>`:''}
-    <div class="sec">${dato('Raza afín',s.raza_afin)}${dato('Nombre angelical',s.linaje_alma)}${dato('Nivel de ascensión',s.nivel_graduacion)}${dato('Notas',s.notas)}</div>
+    <div class="sec">${dato('Raza afín',s.raza_afin)}${dato('Nombre angelical',s.linaje_alma)}${dato('Grupo familiar', grupoNombre(raiz || s))}${dato('Nivel de ascensión',s.nivel_graduacion)}${dato('Notas',s.notas)}</div>
     <div class="sec"><h3>Linaje familiar</h3>${['paterno','materno','directo'].map(l => {
       const g = fam.filter(v => v.lado === l); if(!g.length) return '';
       return `<div class="sub">${LADOS.find(x => x[0] === l)[1]}</div>` + g.map(v => { const d = seres.find(x => x.id === v.ser_destino) || {};
@@ -188,8 +289,8 @@ async function detalle(id){
       <button class="ghost" id="adff">Agregar familiar</button></div>
     ${derivados.length?`<div class="sec"><h3>Registros derivados (${derivados.length})</h3>${derivados.map(d => { const og = seres.find(x => x.id === d.origen_id) || {};
       return `<div class="item link" data-id="${esc(d.id)}"><b>${esc(d.codigo)}</b> <span class="mut">proviene de ${esc(og.codigo||'')}</span> ${natChip(d.naturaleza, d.grado_oscuridad)}</div>`; }).join('')}</div>`:''}
-    <div class="sec"><h3>Ubicaciones</h3>${ub.map(x=>`<div class="item">${esc([x.ciudad,x.estado_region,x.pais].filter(Boolean).join(', '))}
-      <br><span class="mut">${esc(x.periodo||'')}${x.es_actual?' (actual)':''}</span></div>`).join('')||'<p class="mut">Sin ubicaciones.</p>'}
+    <div class="sec"><h3>Ubicaciones</h3>${ub.map(x=>`<div class="item link uloc" data-u="${esc(x.id)}">${esc([x.ciudad,x.estado_region,x.pais].filter(Boolean).join(', '))}
+      <br><span class="mut">${esc(x.periodo||'')}${x.es_actual?' (actual)':''}${x.lat!=null?' (en el mapa, toca para cambiar)':' (toca para marcar en el mapa)'}</span></div>`).join('')||'<p class="mut">Sin ubicaciones.</p>'}
       <button class="ghost" id="addu">Agregar ubicación</button></div>
     <div class="sec"><h3>Afectaciones</h3>${af.map(x=>`<div class="item"><b>${x.categoria==='fisica'?'Física':'Espiritual'}</b>
       <span class="mut">${esc(x.fecha||'')} ${x.estado==='cesada'?'(cesada)':x.estado==='activa'?'(activa)':''}</span><br>${esc(x.descripcion)}
@@ -200,6 +301,12 @@ async function detalle(id){
   document.querySelectorAll('.link[data-id]').forEach(e => e.onclick = () => detalle(e.dataset.id));
   if(origen) $('#orig').onclick = () => detalle(origen.id);
   if(raiz) $('#raiz').onclick = () => detalle(raiz.id);
+  document.querySelectorAll('.uloc').forEach(e => e.onclick = () => elegirPunto(async pt => {
+    if(!pt) return;
+    const r = await sb.from('ubicaciones').update({lat:pt[0], lng:pt[1]}).eq('id', e.dataset.u);
+    if(r.error) alert('No se pudo guardar: ' + r.error.message);
+    detalle(id);
+  }));
   if(adm) $('#del').onclick = async () => {
     const nd = seres.filter(x => x.raiz_id === id).length;
     if(!confirm('¿Eliminar la ficha ' + s.codigo + '? Se borrarán también sus ubicaciones, afectaciones, nombre real y vínculos.' + (nd ? ' Tiene ' + nd + ' registro(s) derivado(s) que quedarán sin registro principal.' : '') + ' No se puede deshacer.')) return;
@@ -223,11 +330,11 @@ async function detalle(id){
       await cargar(); detalle(r.data.id);
     });
   $('#edit').onclick = () => fichaForm(s, ident);
-  $('#addu').onclick = () => hoja('Nueva ubicación', [
+  $('#addu').onclick = () => elegirPunto(async pt => hoja('Nueva ubicación', [
     {k:'pais',l:'País'},{k:'estado_region',l:'Estado o región'},{k:'ciudad',l:'Ciudad (opcional)'},
     {k:'periodo',l:'Periodo (ej. encarnación actual)'},{k:'es_actual',l:'Es la ubicación actual',t:'check'},{k:'notas',l:'Notas',t:'area'}],
-    {es_actual:true}, async o => { if(!o.pais) return {message:'Falta el país.'};
-      const r = await sb.from('ubicaciones').insert({...o, ser_id:id}); if(!r.error) detalle(id); return r.error; });
+    {es_actual:true, ...(pt ? await lugarDe(pt[0], pt[1]) : {})}, async o => { if(!o.pais) return {message:'Falta el país.'};
+      const r = await sb.from('ubicaciones').insert({...o, ser_id:id, lat:pt ? pt[0] : null, lng:pt ? pt[1] : null}); if(!r.error) detalle(id); return r.error; }));
   $('#adda').onclick = () => hoja('Nueva afectación', [
     {k:'categoria',l:'Tipo',t:'select',o:[['espiritual','Espiritual'],['fisica','Física']]},
     {k:'descripcion',l:'Descripción (como la reporta la persona)',t:'area'},{k:'fecha',l:'Fecha',t:'date'},
@@ -254,6 +361,7 @@ function fichaForm(s, ident){
     {k:'naturaleza',l:'Naturaleza (luz u oscuridad)',t:'select',o:NAT},
     {k:'grado_oscuridad',l:'Grado de oscuridad (solo si es oscuridad)',t:'select',o:GRADOS},
     {k:'notas',l:'Notas',t:'area'},
+    ...((!s || !s.raiz_id) ? [{k:'grupo',l:'Nombre del grupo familiar (opcional)'}] : []),
     ...(adm ? [{k:'nombre_real',l:'Solo administrador: nombre real'},{k:'contacto',l:'Solo administrador: contacto'},
                {k:'consentimiento',l:'La persona dio su consentimiento',t:'check'}] : [])];
   hoja(nuevo ? 'Nueva ficha' : 'Editar ficha', campos, v, async o => {
