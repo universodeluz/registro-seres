@@ -70,7 +70,7 @@ const SUPABASE_KEY = 'sb_publishable_u2ycDvACsEddFbUIfha-_A_J0L45eaX';   // nunc
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-let rol = null, coros = [], seres = [], filtro = {q:'', tipo:'', coro:'', nat:''};
+let rol = null, funciones = [], coros = [], seres = [], filtro = {q:'', tipo:'', coro:'', nat:''};
 
 const TIPOS = [['persona_real','Persona real'],['libro','Ser de los libros']];
 const ENC = [['','Sin definir'],['encarnado','Encarnado'],['no_encarnado','No encarnado']];
@@ -107,11 +107,13 @@ async function entrar(){
   rol = p.rol;
   const {data:c} = await sb.from('coros_angelicos').select('*').order('id');
   coros = c || [];
+  const {data:fg} = await sb.from('funciones_gaia').select('*').order('id');
+  funciones = fg || [];
   await cargar(); lista();
 }
 
 async function cargar(){
-  const {data,error} = await sb.from('seres').select('*,coros_angelicos(nombre)').order('codigo');
+  const {data,error} = await sb.from('seres').select('*,coros_angelicos(nombre),funciones_gaia(nombre)').order('codigo');
   if(error) alert('No se pudieron cargar las fichas: ' + error.message);
   seres = data || [];
 }
@@ -280,7 +282,7 @@ async function detalle(id){
       ${s.coros_angelicos?`<span class="chip">${esc(s.coros_angelicos.nombre)}</span>`:''}${natChip(s.naturaleza, s.grado_oscuridad)}</div>
     ${(origen||raiz)?`<div class="priv">${raiz?`<div class="link" id="raiz">Registro principal: <b>${esc(raiz.codigo)}</b></div>`:''}${origen?`<div class="link" id="orig">Proviene de: <b>${esc(origen.codigo)}</b>${arriba?', registrada como '+esc(relTxt(arriba)):''}</div>`:''}</div>`:''}
     ${adm && ident ? `<div class="priv"><b>Solo administrador</b><br>${esc(ident.nombre_real)}${ident.contacto?'<br>'+esc(ident.contacto):''}<br><span class="mut">Consentimiento: ${ident.consentimiento?'sí':'no'}</span></div>`:''}
-    <div class="sec">${dato('Raza afín',s.raza_afin)}${dato('Nombre angelical',s.linaje_alma)}${dato('Grupo familiar', grupoNombre(raiz || s))}${dato('Nivel de ascensión',s.nivel_graduacion)}${dato('Notas',s.notas)}</div>
+    <div class="sec">${dato('Función en la ascensión de Gaia', s.funciones_gaia && s.funciones_gaia.nombre)}${dato('Raza afín',s.raza_afin)}${dato('Nombre angelical',s.linaje_alma)}${dato('Grupo familiar', grupoNombre(raiz || s))}${dato('Nivel de ascensión',s.nivel_graduacion)}${dato('Notas',s.notas)}</div>
     <div class="sec"><h3>Linaje familiar</h3>${['paterno','materno','directo'].map(l => {
       const g = fam.filter(v => v.lado === l); if(!g.length) return '';
       return `<div class="sub">${LADOS.find(x => x[0] === l)[1]}</div>` + g.map(v => { const d = seres.find(x => x.id === v.ser_destino) || {};
@@ -355,6 +357,7 @@ function fichaForm(s, ident){
     {k:'nombre_publico',l:'Nombre (solo seres de los libros)'},
     {k:'tipo_encarnacion',l:'Encarnación',t:'select',o:ENC},
     {k:'coro_id',l:'Coro angélico',t:'select',o:[['','Sin definir'],...coros.map(c=>[c.id,c.nombre])]},
+    {k:'funcion_gaia_id',l:'Funciones en la ascensión de Gaia',t:'select',o:[['','Sin definir'],...funciones.map(f=>[f.id,f.nombre])]},
     {k:'raza_afin',l:'Raza estelar afín'},
     {k:'linaje_alma',l:'Nombre angelical'},
     {k:'nivel_graduacion',l:'Nivel de ascensión'},
@@ -368,6 +371,7 @@ function fichaForm(s, ident){
     const id_ = {nombre_real:o.nombre_real, contacto:o.contacto, consentimiento:!!o.consentimiento};
     delete o.nombre_real; delete o.contacto; delete o.consentimiento;
     o.coro_id = o.coro_id ? Number(o.coro_id) : null;
+    o.funcion_gaia_id = o.funcion_gaia_id ? Number(o.funcion_gaia_id) : null;
     if(o.tipo === 'persona_real') o.nombre_publico = null;
     o.grado_oscuridad = (o.naturaleza === 'oscuridad' && o.grado_oscuridad) ? Number(o.grado_oscuridad) : null;
     const r = nuevo ? await sb.from('seres').insert(o).select().single()
