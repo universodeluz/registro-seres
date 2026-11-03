@@ -243,8 +243,8 @@ async function verMapa(){
     <select id="mg"><option value="">Todos los grupos</option>${grupos.map(g => `<option value="${esc(g[0])}">${esc(g[1])}</option>`).join('')}</select></div>
     <div id="mapa"></div><p class="mut" id="mcount"></p>
     <div class="chips"><span class="chip luz">Luz</span><span class="chip osc">Oscuridad (más grande, mayor grado D)</span><span class="chip">Sin definir</span></div>`;
-  const m = L.map('mapa'); mapaBase(m);
-  const capa = L.layerGroup().addTo(m);
+  const m = L.map('mapa').setView([7.5,-66], 5); mapaBase(m);
+  const capa = L.featureGroup().addTo(m);
   const dibuja = () => {
     capa.clearLayers(); const fn = $('#mn').value, fg = $('#mg').value; let n = 0;
     pts.forEach(({u,s}) => {
