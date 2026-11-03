@@ -37,6 +37,8 @@ header h2{font-size:22px}
 .mut{color:var(--mut)}
 .chip.osc{color:var(--rojo);border-color:#6b3a4a}.chip.luz{color:var(--oro)}
 .link{cursor:pointer}.peligro{border-color:var(--rojo);color:var(--rojo)}
+.btn:disabled,.ghost:disabled{opacity:.4}
+.fil{display:flex;justify-content:space-between;align-items:center;gap:10px}.fil.sel{border-left:3px solid var(--oro);padding-left:8px}
 .grp{background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:12px}.grp summary{cursor:pointer;list-style:none}.grp summary::-webkit-details-marker{display:none}.grp summary .mut{display:block;font-size:15px}
 header{flex-wrap:wrap;gap:8px}header h2{font-size:20px}header .ghost{padding:0 12px;font-size:15px;min-height:40px}
 #mapa{height:58vh;border-radius:12px;border:1px solid var(--line);margin-top:10px}
@@ -70,10 +72,11 @@ const SUPABASE_KEY = 'sb_publishable_u2ycDvACsEddFbUIfha-_A_J0L45eaX';   // nunc
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-let rol = null, funciones = [], coros = [], seres = [], filtro = {q:'', tipo:'', coro:'', nat:''};
+let rol = null, funciones = [], coros = [], seres = [], filtro = {q:'', tipo:'', coro:'', nat:'', fg:'', vc:''};
 
 const TIPOS = [['persona_real','Persona real'],['libro','Ser de los libros']];
 const ENC = [['','Sin definir'],['encarnado','Encarnado'],['no_encarnado','No encarnado']];
+const VINC = ['MariaM','Ariel','En conjunto','En común'];
 const NAT = [['sin_definir','Sin definir'],['luz','Luz'],['oscuridad','Oscuridad']];
 const LADOS = [['paterno','Linaje paterno'],['materno','Linaje materno'],['directo','Línea directa (hermanos, hijos, sobrinos)']];
 const REL = ['bisabuelo','bisabuela','abuelo','abuela','padre','madre','tío','tía','hermano','hermana','pareja','hijo','hija','sobrino','sobrina','primo','prima','nieto','nieta','bisnieto','bisnieta','otro'].map(r => [r, r[0].toUpperCase() + r.slice(1)]);
@@ -123,13 +126,22 @@ function siguienteCodigo(){
   return 'SL-' + String((n.length ? Math.max(...n) : 0) + 1).padStart(4,'0');
 }
 
+function resumenHtml(){
+  const luz = seres.filter(s => s.naturaleza === 'luz');
+  const fila = (k, v, txt, n) => `<div class="item link fil${filtro[k] === String(v) ? ' sel' : ''}" data-k="${k}" data-v="${esc(v)}"><span>${esc(txt)}</span><span class="chip luz">${n}</span></div>`;
+  return `<details class="grp"><summary><b>Funciones en la ascensión de Gaia</b><span class="mut">Seres de luz por función. Toca una para filtrar.</span></summary>
+    ${funciones.map(f => fila('fg', f.id, f.nombre, luz.filter(s => s.funcion_gaia_id === f.id).length)).join('') || '<p class="mut">Sin funciones cargadas.</p>'}</details>
+    <details class="grp"><summary><b>Vinculado a</b><span class="mut">Seres de luz por vínculo. Toca uno para filtrar.</span></summary>
+    ${VINC.map(v => fila('vc', v, v, luz.filter(s => s.vinculado_a === v).length)).join('')}</details>`;
+}
+
 function lista(){
   $('#app').innerHTML = `<header><h2>Seres de Luz</h2><div class="row" style="margin:0"><button class="ghost" id="mapb">Mapa</button>${rol==='administrador'?'<button class="ghost" id="nom">Nombres</button>':''}<button class="ghost" id="out">Salir</button></div></header>
     <div class="tools"><input id="q" type="search" placeholder="Buscar por código, nombre angelical o raza" value="${esc(filtro.q)}">
     <select id="ft"><option value="">Todos los tipos</option>${TIPOS.map(t=>`<option value="${t[0]}">${t[1]}</option>`).join('')}</select>
     <select id="fc"><option value="">Todos los coros</option>${coros.map(c=>`<option value="${c.id}">${esc(c.nombre)}</option>`).join('')}</select>
     <select id="fn" style="grid-column:1/-1;margin:0"><option value="">Luz y oscuridad</option><option value="luz">Luz</option><option value="oscuridad">Oscuridad</option></select></div>
-    <div id="cards"></div><button class="fab" id="nuevo" aria-label="Nueva ficha">+</button>`;
+    ${resumenHtml()}<div id="cards"></div><button class="fab" id="nuevo" aria-label="Nueva ficha">+</button>`;
   $('#ft').value = filtro.tipo; $('#fc').value = filtro.coro; $('#fn').value = filtro.nat;
   $('#q').oninput = e => { filtro.q = e.target.value; pinta(); };
   $('#ft').onchange = e => { filtro.tipo = e.target.value; pinta(); };
@@ -139,6 +151,13 @@ function lista(){
   if($('#nom')) $('#nom').onclick = nombres;
   $('#mapb').onclick = verMapa;
   $('#nuevo').onclick = () => fichaForm(null, null);
+  document.querySelectorAll('.fil').forEach(e => e.onclick = () => {
+    const k = e.dataset.k, v = e.dataset.v;
+    filtro[k] = filtro[k] === v ? '' : v;
+    if(filtro[k]){ filtro.nat = 'luz'; $('#fn').value = 'luz'; }
+    document.querySelectorAll('.fil[data-k="' + k + '"]').forEach(x => x.classList.toggle('sel', x.dataset.v === filtro[k]));
+    pinta();
+  });
   pinta();
 }
 
@@ -152,29 +171,62 @@ async function lugarDe(lat, lng){
   }catch(e){ return {}; }
 }
 
-// Elegir un punto aproximado (se guarda redondeado a 0.1 grado, unos 10 km)
+// Leer coordenadas pegadas desde Google Maps (coordenadas sueltas o enlace completo)
+function leerCoord(t){
+  t = (t || '').trim();
+  try{ t = decodeURIComponent(t); }catch(e){}
+  const m = t.match(/@(-?\d+\.?\d*),\s*(-?\d+\.?\d*)/) || t.match(/!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/) ||
+    t.match(/[?&](?:q|ll|query|center)=(-?\d+\.?\d*),\s*(-?\d+\.?\d*)/) || t.match(/^\s*(-?\d+\.?\d*)\s*[,;\s]\s*(-?\d+\.?\d*)\s*$/);
+  if(!m) return null;
+  const la = +m[1], ln = +m[2];
+  return (Math.abs(la) <= 90 && Math.abs(ln) <= 180) ? [la, ln] : null;
+}
+
+// Elegir un punto: tocando el mapa, buscando un lugar o pegando coordenadas de Google Maps
 function elegirPunto(cb){
   const h = $('#sheet'); h.hidden = false;
-  h.innerHTML = `<div class="hoja" style="height:92vh;display:flex;flex-direction:column"><h3>Ubicación aproximada</h3>
+  h.innerHTML = `<div class="hoja" style="height:94vh;display:flex;flex-direction:column"><h3>Ubicación</h3>
     <div style="display:flex;gap:8px;margin-top:8px"><input id="qlug" placeholder="Buscar lugar (ciudad, estado o país)" style="margin:0"><button type="button" class="ghost" id="blug">Buscar</button></div>
-    <p class="mut" style="margin:6px 0">Toca el mapa para marcar el punto. Se guarda aproximado, unos 10 km.</p>
+    <div style="display:flex;gap:8px;margin-top:8px"><input id="qgm" placeholder="Pegar coordenadas o enlace de Google Maps" style="margin:0"><button type="button" class="ghost" id="bgm">Usar</button></div>
+    <div style="display:flex;gap:8px;margin-top:8px"><button type="button" class="ghost" id="bgo">Abrir Google Maps</button>
+      <select id="prec" style="margin:0"><option value="aprox">Aproximada (10 km)</option><option value="exacta">Exacta</option></select></div>
+    <p class="mut" id="pinfo" style="margin:6px 0">Toca el mapa para marcar el punto.</p>
     <div id="pmap" style="flex:1;min-height:240px;border-radius:12px;border:1px solid var(--line)"></div>
     <div class="row"><button type="button" class="ghost" id="pcx">Cancelar</button><button type="button" class="ghost" id="pom">Sin mapa</button><button type="button" class="btn" id="pok" disabled>Usar este punto</button></div></div>`;
   const m = L.map('pmap').setView([7.5,-66], 5); mapaBase(m);
-  setTimeout(() => m.invalidateSize(), 100);
-  let mk = null, pt = null;
-  m.on('click', e => {
-    pt = [Math.round(e.latlng.lat * 10) / 10, Math.round(e.latlng.lng * 10) / 10];
-    if(mk) mk.setLatLng(pt); else mk = L.circleMarker(pt, {radius:10, color:'#d9b45a', fillColor:'#d9b45a', fillOpacity:.6}).addTo(m);
-    $('#pok').disabled = false;
-  });
+  setTimeout(() => m.invalidateSize(), 150);
+  let mk = null, ex = null, pt = null;
+  const info = () => {
+    if(!ex) return;
+    const exacta = $('#prec').value === 'exacta';
+    pt = exacta ? [+ex[0].toFixed(4), +ex[1].toFixed(4)] : [Math.round(ex[0] * 10) / 10, Math.round(ex[1] * 10) / 10];
+    $('#pinfo').textContent = 'Se guardará: ' + pt[0] + ', ' + pt[1] + (exacta ? ' (exacta)' : ' (aproximada, unos 10 km)');
+  };
+  const poner = (la, ln, centrar) => {
+    ex = [la, ln];
+    if(mk) mk.setLatLng(ex); else mk = L.circleMarker(ex, {radius:10, color:'#d9b45a', fillColor:'#d9b45a', fillOpacity:.7}).addTo(m);
+    if(centrar) m.setView(ex, Math.max(m.getZoom(), 12));
+    $('#pok').disabled = false; info();
+  };
+  m.on('click', e => poner(e.latlng.lat, e.latlng.lng, false));
+  $('#prec').onchange = info;
   $('#blug').onclick = async () => {
     const q = $('#qlug').value.trim(); if(!q) return;
     try{
       const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=es&q=' + encodeURIComponent(q));
       const j = await r.json();
-      j[0] ? m.setView([+j[0].lat, +j[0].lon], 9) : alert('No se encontró ese lugar.');
+      j[0] ? m.setView([+j[0].lat, +j[0].lon], 12) : alert('No se encontró ese lugar.');
     }catch(e){ alert('No se pudo buscar el lugar.'); }
+  };
+  $('#bgm').onclick = () => {
+    const t = $('#qgm').value, c = leerCoord(t);
+    if(c) return poner(c[0], c[1], true);
+    alert(/goo\.gl|maps\.app/i.test(t) ? 'Ese enlace corto no trae las coordenadas. Ábrelo en Google Maps, mantén el dedo sobre el punto, toca las coordenadas para copiarlas y pégalas aquí.' : 'No se reconocieron coordenadas. Pega algo como 7.7669, -72.2250 o un enlace largo de Google Maps.');
+  };
+  $('#bgo').onclick = () => {
+    const q = $('#qlug').value.trim(), c = m.getCenter();
+    window.open(q ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(q)
+                  : 'https://www.google.com/maps/@' + c.lat.toFixed(5) + ',' + c.lng.toFixed(5) + ',' + m.getZoom() + 'z', '_blank');
   };
   $('#pcx').onclick = () => { m.remove(); cerrar(); };
   $('#pom').onclick = () => { m.remove(); cerrar(); cb(null); };
@@ -200,7 +252,7 @@ async function verMapa(){
       const osc = s.naturaleza === 'oscuridad', luz = s.naturaleza === 'luz';
       const col = osc ? '#ff6b6b' : luz ? '#d9b45a' : '#7fb0ff';
       const c = L.circleMarker([u.lat, u.lng], {radius: osc ? 6 + (s.grado_oscuridad || 3) : 8, color: col, fillColor: col, fillOpacity:.55, weight:2}).addTo(capa);
-      c.bindPopup(`<b>${esc(s.codigo)}</b><br>${esc([u.ciudad,u.estado_region,u.pais].filter(Boolean).join(', '))}<br>${osc ? 'Oscuridad' + (s.grado_oscuridad ? ' D-' + s.grado_oscuridad : '') : luz ? 'Luz' : 'Sin definir'}<br>Grupo: ${esc(grupoNombre(raizDe(s)))}${s.linaje_alma ? '<br>' + esc(s.linaje_alma) : ''}<br><button class="ghost" style="min-height:36px;margin-top:6px" data-id="${esc(s.id)}">Abrir ficha</button>`);
+      c.bindPopup(`<b>${esc(s.codigo)}</b><br>${esc([u.ciudad,u.estado_region,u.pais].filter(Boolean).join(', '))}<br>${osc ? 'Oscuridad' + (s.grado_oscuridad ? ' D-' + s.grado_oscuridad : '') : luz ? 'Luz' : 'Sin definir'}<br>Grupo: ${esc(grupoNombre(raizDe(s)))}${s.linaje_alma ? '<br>' + esc(s.linaje_alma) : ''}<br><a href="https://www.google.com/maps?q=${u.lat},${u.lng}" target="_blank" rel="noopener" style="color:#d9b45a">Ver en Google Maps</a><br><button class="ghost" style="min-height:36px;margin-top:6px" data-id="${esc(s.id)}">Abrir ficha</button>`);
       c.on('popupopen', e => { const b = e.popup.getElement().querySelector('button'); if(b) b.onclick = () => { m.remove(); detalle(b.dataset.id); }; });
       n++;
     });
@@ -241,10 +293,10 @@ async function nombres(){
 }
 
 function pinta(){
-  const q = filtro.q.toLowerCase(), filtrando = q || filtro.tipo || filtro.coro || filtro.nat;
+  const q = filtro.q.toLowerCase(), filtrando = q || filtro.tipo || filtro.coro || filtro.nat || filtro.fg || filtro.vc;
   const f = seres.filter(s =>
     [s.codigo,s.nombre_publico,s.raza_afin,s.linaje_alma,grupoNombre(raizDe(s))].join(' ').toLowerCase().includes(q) &&
-    (!filtro.tipo || s.tipo === filtro.tipo) && (!filtro.coro || String(s.coro_id) === filtro.coro) && (!filtro.nat || s.naturaleza === filtro.nat));
+    (!filtro.tipo || s.tipo === filtro.tipo) && (!filtro.coro || String(s.coro_id) === filtro.coro) && (!filtro.nat || s.naturaleza === filtro.nat) && (!filtro.fg || String(s.funcion_gaia_id) === filtro.fg) && (!filtro.vc || s.vinculado_a === filtro.vc));
   const grupos = new Map();
   f.forEach(s => { const r = raizDe(s); if(!grupos.has(r.id)) grupos.set(r.id, {r, m:[]}); grupos.get(r.id).m.push(s); });
   const tarjeta = s => `<div class="card" data-id="${s.id}"><b>${esc(s.codigo)}</b> ${esc(s.nombre_publico||'')}
@@ -282,7 +334,7 @@ async function detalle(id){
       ${s.coros_angelicos?`<span class="chip">${esc(s.coros_angelicos.nombre)}</span>`:''}${natChip(s.naturaleza, s.grado_oscuridad)}</div>
     ${(origen||raiz)?`<div class="priv">${raiz?`<div class="link" id="raiz">Registro principal: <b>${esc(raiz.codigo)}</b></div>`:''}${origen?`<div class="link" id="orig">Proviene de: <b>${esc(origen.codigo)}</b>${arriba?', registrada como '+esc(relTxt(arriba)):''}</div>`:''}</div>`:''}
     ${adm && ident ? `<div class="priv"><b>Solo administrador</b><br>${esc(ident.nombre_real)}${ident.contacto?'<br>'+esc(ident.contacto):''}<br><span class="mut">Consentimiento: ${ident.consentimiento?'sí':'no'}</span></div>`:''}
-    <div class="sec">${dato('Función en la ascensión de Gaia', s.funciones_gaia && s.funciones_gaia.nombre)}${dato('Raza afín',s.raza_afin)}${dato('Nombre angelical',s.linaje_alma)}${dato('Grupo familiar', grupoNombre(raiz || s))}${dato('Nivel de ascensión',s.nivel_graduacion)}${dato('Notas',s.notas)}</div>
+    <div class="sec">${dato('Función en la ascensión de Gaia', s.funciones_gaia && s.funciones_gaia.nombre)}${dato('Vinculado a', s.vinculado_a)}${dato('Raza afín',s.raza_afin)}${dato('Nombre angelical',s.linaje_alma)}${dato('Grupo familiar', grupoNombre(raiz || s))}${dato('Nivel de ascensión',s.nivel_graduacion)}${dato('Notas',s.notas)}</div>
     <div class="sec"><h3>Linaje familiar</h3>${['paterno','materno','directo'].map(l => {
       const g = fam.filter(v => v.lado === l); if(!g.length) return '';
       return `<div class="sub">${LADOS.find(x => x[0] === l)[1]}</div>` + g.map(v => { const d = seres.find(x => x.id === v.ser_destino) || {};
@@ -358,6 +410,7 @@ function fichaForm(s, ident){
     {k:'tipo_encarnacion',l:'Encarnación',t:'select',o:ENC},
     {k:'coro_id',l:'Coro angélico',t:'select',o:[['','Sin definir'],...coros.map(c=>[c.id,c.nombre])]},
     {k:'funcion_gaia_id',l:'Funciones en la ascensión de Gaia',t:'select',o:[['','Sin definir'],...funciones.map(f=>[f.id,f.nombre])]},
+    {k:'vinculado_a',l:'Vinculado a',t:'select',o:[['','Sin definir'],...VINC.map(v=>[v,v])]},
     {k:'raza_afin',l:'Raza estelar afín'},
     {k:'linaje_alma',l:'Nombre angelical'},
     {k:'nivel_graduacion',l:'Nivel de ascensión'},
