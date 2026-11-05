@@ -72,7 +72,7 @@ const SUPABASE_KEY = 'sb_publishable_u2ycDvACsEddFbUIfha-_A_J0L45eaX';   // nunc
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-let rol = null, funciones = [], coros = [], seres = [], filtro = {q:'', tipo:'', coro:'', nat:'', fg:'', vc:''};
+let rol = null, niveles = [], funciones = [], coros = [], seres = [], filtro = {q:'', tipo:'', coro:'', nat:'', fg:'', vc:'', nv:''};
 
 const TIPOS = [['persona_real','Persona real'],['libro','Ser de los libros']];
 const ENC = [['','Sin definir'],['encarnado','Encarnado'],['no_encarnado','No encarnado']];
@@ -112,11 +112,13 @@ async function entrar(){
   coros = c || [];
   const {data:fg} = await sb.from('funciones_gaia').select('*').order('id');
   funciones = fg || [];
+  const {data:nd} = await sb.from('niveles_despertar').select('*').order('id');
+  niveles = nd || [];
   await cargar(); lista();
 }
 
 async function cargar(){
-  const {data,error} = await sb.from('seres').select('*,coros_angelicos(nombre),funciones_gaia(nombre)').order('codigo');
+  const {data,error} = await sb.from('seres').select('*,coros_angelicos(nombre),funciones_gaia(nombre),niveles_despertar(nombre)').order('codigo');
   if(error) alert('No se pudieron cargar las fichas: ' + error.message);
   seres = data || [];
 }
@@ -129,7 +131,9 @@ function siguienteCodigo(){
 function resumenHtml(){
   const luz = seres.filter(s => s.naturaleza === 'luz');
   const fila = (k, v, txt, n) => `<div class="item link fil${filtro[k] === String(v) ? ' sel' : ''}" data-k="${k}" data-v="${esc(v)}"><span>${esc(txt)}</span><span class="chip luz">${n}</span></div>`;
-  return `<details class="grp"><summary><b>Funciones en la ascensión de Gaia</b><span class="mut">Seres de luz por función. Toca una para filtrar.</span></summary>
+  return `<details class="grp"><summary><b>Niveles de despertar</b><span class="mut">Seres de luz por nivel. Toca uno para filtrar.</span></summary>
+    ${niveles.map(n => fila('nv', n.id, n.nombre, luz.filter(s => s.nivel_despertar_id === n.id).length)).join('') || '<p class="mut">Sin niveles cargados.</p>'}</details>
+    <details class="grp"><summary><b>Funciones en la ascensión de Gaia</b><span class="mut">Seres de luz por función. Toca una para filtrar.</span></summary>
     ${funciones.map(f => fila('fg', f.id, f.nombre, luz.filter(s => s.funcion_gaia_id === f.id).length)).join('') || '<p class="mut">Sin funciones cargadas.</p>'}</details>
     <details class="grp"><summary><b>Vinculado a</b><span class="mut">Seres de luz por vínculo. Toca uno para filtrar.</span></summary>
     ${VINC.map(v => fila('vc', v, v, luz.filter(s => s.vinculado_a === v).length)).join('')}</details>`;
@@ -293,10 +297,10 @@ async function nombres(){
 }
 
 function pinta(){
-  const q = filtro.q.toLowerCase(), filtrando = q || filtro.tipo || filtro.coro || filtro.nat || filtro.fg || filtro.vc;
+  const q = filtro.q.toLowerCase(), filtrando = q || filtro.tipo || filtro.coro || filtro.nat || filtro.fg || filtro.vc || filtro.nv;
   const f = seres.filter(s =>
     [s.codigo,s.nombre_publico,s.raza_afin,s.linaje_alma,grupoNombre(raizDe(s))].join(' ').toLowerCase().includes(q) &&
-    (!filtro.tipo || s.tipo === filtro.tipo) && (!filtro.coro || String(s.coro_id) === filtro.coro) && (!filtro.nat || s.naturaleza === filtro.nat) && (!filtro.fg || String(s.funcion_gaia_id) === filtro.fg) && (!filtro.vc || s.vinculado_a === filtro.vc));
+    (!filtro.tipo || s.tipo === filtro.tipo) && (!filtro.coro || String(s.coro_id) === filtro.coro) && (!filtro.nat || s.naturaleza === filtro.nat) && (!filtro.fg || String(s.funcion_gaia_id) === filtro.fg) && (!filtro.vc || s.vinculado_a === filtro.vc) && (!filtro.nv || String(s.nivel_despertar_id) === filtro.nv));
   const grupos = new Map();
   f.forEach(s => { const r = raizDe(s); if(!grupos.has(r.id)) grupos.set(r.id, {r, m:[]}); grupos.get(r.id).m.push(s); });
   const tarjeta = s => `<div class="card" data-id="${s.id}"><b>${esc(s.codigo)}</b> ${esc(s.nombre_publico||'')}
@@ -334,7 +338,7 @@ async function detalle(id){
       ${s.coros_angelicos?`<span class="chip">${esc(s.coros_angelicos.nombre)}</span>`:''}${natChip(s.naturaleza, s.grado_oscuridad)}</div>
     ${(origen||raiz)?`<div class="priv">${raiz?`<div class="link" id="raiz">Registro principal: <b>${esc(raiz.codigo)}</b></div>`:''}${origen?`<div class="link" id="orig">Proviene de: <b>${esc(origen.codigo)}</b>${arriba?', registrada como '+esc(relTxt(arriba)):''}</div>`:''}</div>`:''}
     ${adm && ident ? `<div class="priv"><b>Solo administrador</b><br>${esc(ident.nombre_real)}${ident.contacto?'<br>'+esc(ident.contacto):''}<br><span class="mut">Consentimiento: ${ident.consentimiento?'sí':'no'}</span></div>`:''}
-    <div class="sec">${dato('Función en la ascensión de Gaia', s.funciones_gaia && s.funciones_gaia.nombre)}${dato('Vinculado a', s.vinculado_a)}${dato('Raza afín',s.raza_afin)}${dato('Nombre angelical',s.linaje_alma)}${dato('Grupo familiar', grupoNombre(raiz || s))}${dato('Nivel de ascensión',s.nivel_graduacion)}${dato('Notas',s.notas)}</div>
+    <div class="sec">${dato('Nivel de despertar', s.niveles_despertar && s.niveles_despertar.nombre)}${dato('Función en la ascensión de Gaia', s.funciones_gaia && s.funciones_gaia.nombre)}${dato('Vinculado a', s.vinculado_a)}${dato('Raza afín',s.raza_afin)}${dato('Nombre angelical',s.linaje_alma)}${dato('Grupo familiar', grupoNombre(raiz || s))}${dato('Nivel de ascensión',s.nivel_graduacion)}${dato('Notas',s.notas)}</div>
     <div class="sec"><h3>Linaje familiar</h3>${['paterno','materno','directo'].map(l => {
       const g = fam.filter(v => v.lado === l); if(!g.length) return '';
       return `<div class="sub">${LADOS.find(x => x[0] === l)[1]}</div>` + g.map(v => { const d = seres.find(x => x.id === v.ser_destino) || {};
@@ -409,6 +413,7 @@ function fichaForm(s, ident){
     {k:'nombre_publico',l:'Nombre (solo seres de los libros)'},
     {k:'tipo_encarnacion',l:'Encarnación',t:'select',o:ENC},
     {k:'coro_id',l:'Coro angélico',t:'select',o:[['','Sin definir'],...coros.map(c=>[c.id,c.nombre])]},
+    {k:'nivel_despertar_id',l:'Niveles de despertar',t:'select',o:[['','Sin definir'],...niveles.map(n=>[n.id,n.nombre])]},
     {k:'funcion_gaia_id',l:'Funciones en la ascensión de Gaia',t:'select',o:[['','Sin definir'],...funciones.map(f=>[f.id,f.nombre])]},
     {k:'vinculado_a',l:'Vinculado a',t:'select',o:[['','Sin definir'],...VINC.map(v=>[v,v])]},
     {k:'raza_afin',l:'Raza estelar afín'},
@@ -425,6 +430,7 @@ function fichaForm(s, ident){
     delete o.nombre_real; delete o.contacto; delete o.consentimiento;
     o.coro_id = o.coro_id ? Number(o.coro_id) : null;
     o.funcion_gaia_id = o.funcion_gaia_id ? Number(o.funcion_gaia_id) : null;
+    o.nivel_despertar_id = o.nivel_despertar_id ? Number(o.nivel_despertar_id) : null;
     if(o.tipo === 'persona_real') o.nombre_publico = null;
     o.grado_oscuridad = (o.naturaleza === 'oscuridad' && o.grado_oscuridad) ? Number(o.grado_oscuridad) : null;
     const r = nuevo ? await sb.from('seres').insert(o).select().single()
